@@ -43,6 +43,7 @@ h2{font:600 18px ui-serif,Georgia,serif;margin:28px 0 8px;color:var(--acc)}
 #bar{position:relative;width:160px;height:3px;background:#141626;border-radius:2px;margin-bottom:40px}
 #mk{text-decoration:none;position:absolute;top:-4px;bottom:-4px;width:2px;background:#8a6f3a;left:0}
 #bar i{display:block;height:100%;width:0;background:#3a3f5a;border-radius:2px}
+.th{width:260px;margin:-14px 0 28px;font-size:13px}.th input{width:100%;accent-color:#8a6f3a}
 #night button{background:#10121f;color:#5b6180}
 </style>
 </head>
@@ -65,6 +66,7 @@ h2{font:600 18px ui-serif,Georgia,serif;margin:28px 0 8px;color:var(--acc)}
 <div class="st" id="st">Калибровка тишины…</div>
 <div class="n" id="cnt">0</div>
 <div id="bar"><i id="lvl"></i><u id="mk"></u></div>
+<div class="th"><label for="th">Порог: тяните влево, чтобы ловить тихие звуки</label><input type="range" id="th" min="0.3" max="60" step="0.1" value="5"></div>
 <button id="stop">Остановить запись</button>
 </div>
 
@@ -150,12 +152,12 @@ function tick(){
   an.getFloatTimeDomainData(buf);
   let s=0;for(let i=0;i<buf.length;i++)s+=buf[i]*buf[i];
   const rms=Math.sqrt(s/buf.length), now=Date.now();
-  $('lvl').style.width=Math.min(100,rms*1500)+'%';
+  $('lvl').style.width=Math.min(100,rms*3000)+'%';
   if(calib.length<50){
     calib.push(rms);
     if(calib.length===50){
       const f=calib.slice().sort((a,b)=>a-b)[25];
-      thr=Math.max(f*Number($('sens').value),0.004);$('mk').style.left=Math.min(100,thr*1500)+'%';
+      thr=Math.max(f*Number($('sens').value),0.0015);setTh(thr*3000);
       $('st').textContent='Запись идёт. Найдено звуков (светлая полоса должна дойти до метки):';
     }
     return;
@@ -164,6 +166,8 @@ function tick(){
   if(rec&&(now-lastLoud>3000||now-recStart>60000))stopRec();
 }
 
+function setTh(v){v=Math.max(0.3,Math.min(60,v));$('th').value=v;thr=v/3000;$('mk').style.left=v+'%'}
+$('th').oninput=()=>setTh(Number($('th').value));
 const showErr=m=>{$('err').textContent=m};
 async function start(){
   showErr('');
