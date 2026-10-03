@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Звуки сна">
+<meta name="theme-color" content="#0d1020">
+<title>Звуки сна</title>
+<style>
+:root{--bg:#0d1020;--card:#171b30;--line:#262b47;--tx:#d6d9e8;--dim:#7d83a3;--acc:#e0b872;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*:before,*:after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.45 -apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:520px;margin:0 auto;padding:20px 16px 40px}
+h1{font:600 26px/1.2 ui-serif,Georgia,serif;margin:0 0 4px}
+.sub{color:var(--dim);margin:0 0 20px}
+button{font:inherit;color:inherit;border:0;border-radius:12px;padding:14px 18px;background:var(--card);cursor:pointer}
+button:focus-visible,select:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.big{width:100%;background:var(--acc);color:#1a1405;font-weight:600;font-size:18px;padding:18px}
+.row{display:flex;gap:10px;align-items:center;margin:14px 0}
+select{flex:1;font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px}
+.tips{color:var(--dim);font-size:14px;margin:16px 0 0}
+h2{font:600 18px ui-serif,Georgia,serif;margin:28px 0 8px;color:var(--acc)}
+.week{display:flex;gap:6px;margin:24px 0 4px;align-items:stretch}
+.day{flex:1;min-width:0;padding:8px 0;display:flex;flex-direction:column;align-items:center;gap:2px;border-radius:10px;font-size:13px;color:var(--dim)}
+.day b{font-size:17px;color:var(--tx);font-weight:600}
+.day i{font-style:normal;font-size:12px;height:14px;color:var(--acc)}
+.day.on{background:var(--acc)}.day.on,.day.on b,.day.on i{color:#1a1405}
+.wnav{padding:8px 10px;background:none;color:var(--dim);font-size:20px}
+.ev{background:var(--card);border-radius:14px;padding:12px;margin:0 0 10px}
+.ev .top{display:flex;justify-content:space-between;margin-bottom:8px}
+.ev audio{width:100%;height:36px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{padding:6px 12px;border-radius:99px;font-size:14px;background:var(--bg);border:1px solid var(--line)}
+.chip.on{background:var(--acc);color:#1a1405;border-color:var(--acc)}
+.del{margin-left:auto;color:var(--dim);background:none}
+.empty{color:var(--dim);padding:20px 0}
+#night{display:none;position:fixed;inset:0;background:#000;color:#3a3f5a;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;z-index:9}
+#night.on{display:flex}
+#night .st{font-size:15px}
+#night .n{font:300 44px ui-serif,Georgia,serif;margin:8px 0 28px}
+#bar{width:160px;height:3px;background:#141626;border-radius:2px;margin-bottom:40px}
+#bar i{display:block;height:100%;width:0;background:#3a3f5a;border-radius:2px}
+#night button{background:#10121f;color:#5b6180}
+</style>
+</head>
+<body>
+<main>
+<h1>Звуки сна</h1>
+<p class="sub">Записывает только громкие звуки ночью. Прослушивание бесплатное, всё хранится на вашем телефоне.</p>
+
+<button class="big" id="go">Начать запись на ночь</button>
+<div class="row"><label for="sens">Чувствительность</label>
+<select id="sens"><option value="2">Высокая (тихие звуки)</option><option value="3" selected>Средняя</option><option value="5">Низкая (только громкие)</option></select></div>
+<p class="tips" id="err" style="color:#e58a8a"></p>
+<p class="tips">Перед сном: поставьте телефон на зарядку рядом с кроватью микрофоном к себе, уберите яркость на минимум. Экран будет чёрным, но не выключится, иначе запись остановится. Не закрывайте приложение.</p>
+
+<div class="week" id="week"></div>
+<div id="list"></div>
+</main>
+
+<div id="night">
+<div class="st" id="st">Калибровка тишины…</div>
+<div class="n" id="cnt">0</div>
+<div id="bar"><i id="lvl"></i></div>
+<button id="stop">Остановить запись</button>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+let db=null, mem=[], memId=1;
+let stream,ctx,an,buf,timer,wl,rec,chunks,recStart=0,lastLoud=0,calib=[],thr=0.02,count=0,running=false;
+const MIME=['audio/mp4','audio/webm;codecs=opus','audio/webm'].find(m=>window.MediaRecorder&&MediaRecorder.isTypeSupported(m))||'';
+
+function openDB(){return new Promise(res=>{try{const r=indexedDB.open('sleepsounds',1);r.onupgradeneeded=()=>r.result.createObjectStore('ev',{keyPath:'id',autoIncrement:true});r.onsuccess=()=>res(r.result);r.onerror=()=>res(null)}catch(e){res(null)}})}
+function dbAll(){return new Promise(res=>{if(!db)return res(mem.slice());const q=db.transaction('ev').objectStore('ev').getAll();q.onsuccess=()=>res(q.result);q.onerror=()=>res([])})}
+function dbPut(o){return new Promise(res=>{if(!db){o.id=o.id||memId++;mem=mem.filter(x=>x.id!==o.id);mem.push(o);return res()}const t=db.transaction('ev','readwrite');t.objectStore('ev').put(o);t.oncomplete=()=>res();t.onerror=()=>res()})}
+function dbDel(id){return new Promise(res=>{if(!db){mem=mem.filter(x=>x.id!==id);return res()}const t=db.transaction('ev','readwrite');t.objectStore('ev').delete(id);t.oncomplete=()=>res();t.onerror=()=>res()})}
+
+const LABELS=['Храп','Кашель','Речь','Другое'];
+const fmtT=t=>new Date(t).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+let urls=[], sel=null, wkEnd=null;
+const pad=n=>String(n).padStart(2,'0');
+const keyOf=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const nightKey=t=>keyOf(new Date(t-12*3600e3));
+const addDays=(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);
+async function render(){
+  urls.forEach(u=>URL.revokeObjectURL(u));urls=[];
+  const all=await dbAll(), by={};
+  all.forEach(e=>{const k=nightKey(e.t);(by[k]=by[k]||[]).push(e)});
+  const n0=new Date(Date.now()-12*3600e3), today=new Date(n0.getFullYear(),n0.getMonth(),n0.getDate());
+  if(!wkEnd)wkEnd=today;
+  if(!sel){const tk=keyOf(today);const ks=Object.keys(by).filter(k=>k<=tk&&k>=keyOf(addDays(today,-6))).sort();sel=by[tk]?tk:(ks.length?ks[ks.length-1]:tk)}
+  const w=$('week');w.textContent='';
+  const nav=(txt,delta)=>{const b=document.createElement('button');b.className='wnav';b.textContent=txt;b.setAttribute('aria-label',delta<0?'Неделя раньше':'Неделя позже');
+    b.onclick=()=>{let nd=addDays(wkEnd,delta);if(nd>today)nd=today;wkEnd=nd;render()};return b};
+  w.appendChild(nav('‹',-7));
+  for(let i=6;i>=0;i--){
+    const d=addDays(wkEnd,-i),k=keyOf(d),c=(by[k]||[]).length;
+    const b=document.createElement('button');b.className='day'+(k===sel?' on':'');
+    b.innerHTML='<span></span><b></b><i></i>';
+    b.children[0].textContent=d.toLocaleDateString('ru-RU',{weekday:'short'});
+    b.children[1].textContent=d.getDate();b.children[2].textContent=c||'';
+    b.onclick=()=>{sel=k;render()};w.appendChild(b);
+  }
+  w.appendChild(nav('›',7));
+  const box=$('list');box.textContent='';
+  const d0=new Date(sel+'T12:00:00'), d1=addDays(d0,1);
+  const h=document.createElement('h2');
+  h.textContent='Ночь с '+d0.getDate()+' на '+d1.toLocaleDateString('ru-RU',{day:'numeric',month:'long'});
+  box.appendChild(h);
+  const items=(by[sel]||[]).sort((a,b)=>a.t-b.t);
+  if(!items.length){const p=document.createElement('p');p.className='empty';p.textContent='В эту ночь записей нет.';box.appendChild(p);return}
+  for(const e of items){
+    const u=URL.createObjectURL(e.blob);urls.push(u);
+    const d=document.createElement('div');d.className='ev';
+    d.innerHTML='<div class="top"><strong></strong><span class="sec"></span></div><audio controls preload="none"></audio><div class="chips"></div>';
+    d.querySelector('strong').textContent=fmtT(e.t);
+    d.querySelector('.sec').textContent=Math.round(e.dur/1000)+' с';
+    d.querySelector('audio').src=u;
+    const ch=d.querySelector('.chips');
+    LABELS.forEach(l=>{const b=document.createElement('button');b.className='chip'+(e.label===l?' on':'');b.textContent=l;
+      b.onclick=async()=>{e.label=e.label===l?'':l;await dbPut(e);render()};ch.appendChild(b)});
+    const x=document.createElement('button');x.className='chip del';x.textContent='Удалить';
+    x.onclick=async()=>{if(!x.dataset.s){x.dataset.s=1;x.textContent='Точно удалить?';return}await dbDel(e.id);render()};ch.appendChild(x);
+    box.appendChild(d);
+  }
+}
+
+async function wake(){try{if(navigator.wakeLock)wl=await navigator.wakeLock.request('screen')}catch(e){}}
+document.addEventListener('visibilitychange',()=>{if(running&&document.visibilityState==='visible')wake()});
+
+function startRec(){
+  try{rec=new MediaRecorder(stream,MIME?{mimeType:MIME}:undefined)}catch(e){return}
+  chunks=[];recStart=Date.now();
+  rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};
+  const r=rec,t0=recStart;
+  r.onstop=async()=>{
+    if(!chunks.length)return;
+    await dbPut({t:t0,dur:Date.now()-t0,blob:new Blob(chunks,{type:MIME||'audio/webm'}),label:''});
+    count++;$('cnt').textContent=count;
+  };
+  rec.start();
+}
+function stopRec(){if(rec&&rec.state==='recording')rec.stop();rec=null}
+
+function tick(){
+  an.getFloatTimeDomainData(buf);
+  let s=0;for(let i=0;i<buf.length;i++)s+=buf[i]*buf[i];
+  const rms=Math.sqrt(s/buf.length), now=Date.now();
+  $('lvl').style.width=Math.min(100,rms*600)+'%';
+  if(calib.length<50){
+    calib.push(rms);
+    if(calib.length===50){
+      const f=calib.slice().sort((a,b)=>a-b)[25];
+      thr=Math.max(f*Number($('sens').value),0.012);
+      $('st').textContent='Запись идёт. Найдено звуков:';
+    }
+    return;
+  }
+  if(rms>thr){lastLoud=now;if(!rec)startRec()}
+  if(rec&&(now-lastLoud>3000||now-recStart>60000))stopRec();
+}
+
+const showErr=m=>{$('err').textContent=m};
+async function start(){
+  showErr('');
+  if(!navigator.mediaDevices||!window.MediaRecorder){showErr('Эта страница не получила доступ к записи звука (mediaDevices/MediaRecorder недоступны). Откройте её в Safari.');return}
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}})}
+  catch(e){showErr('Микрофон не включился: '+(e&&e.name?e.name:e)+'. '+(e&&e.message?e.message:''));return}
+  ctx=new (window.AudioContext||window.webkitAudioContext)();await ctx.resume();
+  an=ctx.createAnalyser();an.fftSize=1024;ctx.createMediaStreamSource(stream).connect(an);
+  buf=new Float32Array(an.fftSize);
+  calib=[];count=0;$('cnt').textContent='0';$('st').textContent='Калибровка тишины… 5 секунд, не шумите';
+  running=true;await wake();
+  $('night').classList.add('on');
+  timer=setInterval(tick,100);
+}
+async function stop(){
+  running=false;clearInterval(timer);stopRec();
+  await new Promise(r=>setTimeout(r,300));
+  try{stream.getTracks().forEach(t=>t.stop());ctx.close();if(wl)wl.release()}catch(e){}
+  $('night').classList.remove('on');render();
+}
+$('go').onclick=()=>{start().catch(e=>{showErr('Ошибка: '+(e&&e.message?e.message:e));$('night').classList.remove('on')})};$('stop').onclick=stop;
+openDB().then(d=>{db=d;render()});
+</script>
+</body>
+</html>
