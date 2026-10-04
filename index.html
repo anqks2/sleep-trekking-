@@ -53,7 +53,7 @@ h2{font:600 18px ui-serif,Georgia,serif;margin:28px 0 8px;color:var(--acc)}
 
 <button class="big" id="go">Начать запись на ночь</button>
 <div class="row"><label for="sens">Чувствительность</label>
-<select id="sens"><option value="1.5">Максимальная (очень тихие звуки)</option><option value="2">Высокая (тихие звуки)</option><option value="3" selected>Средняя</option><option value="5">Низкая (только громкие)</option></select></div>
+<select id="sens"><option value="1.8">Максимальная (очень тихие звуки)</option><option value="2.5" selected>Высокая</option><option value="3.5">Средняя</option><option value="5">Низкая (только громкие)</option></select></div>
 <p class="tips" id="err" style="color:#e58a8a"></p>
 <p class="tips">Перед сном: поставьте телефон на зарядку рядом с кроватью микрофоном к себе, уберите яркость на минимум. Экран будет чёрным, но не выключится, иначе запись остановится. Не закрывайте приложение.</p>
 
@@ -111,6 +111,13 @@ async function render(){
   const h=document.createElement('h2');
   h.textContent='Ночь с '+d0.getDate()+' на '+d1.toLocaleDateString('ru-RU',{day:'numeric',month:'long'});
   box.appendChild(h);
+  if((by[sel]||[]).length){
+    const hb=document.createElement('button');hb.className='chip del';hb.style.margin='0 0 12px';
+    hb.textContent='Удалить все записи за эту ночь ('+by[sel].length+')';
+    hb.onclick=async()=>{if(!hb.dataset.s){hb.dataset.s=1;hb.textContent='Нажмите ещё раз: удалить все '+by[sel].length;return}
+      hb.disabled=true;hb.textContent='Удаляю…';for(const e of by[sel])await dbDel(e.id);render()};
+    box.appendChild(hb);
+  }
   const items=(by[sel]||[]).sort((a,b)=>a.t-b.t);
   if(!items.length){const p=document.createElement('p');p.className='empty';p.textContent='В эту ночь записей нет.';box.appendChild(p);return}
   for(const e of items){
@@ -163,7 +170,7 @@ function tick(){
   if(rec&&(now-lastLoud>3000||now-recStart>60000))stopRec();
 }
 
-function setTh(f){thr=Math.max((f||0)*1.3,0.0005);$('mk').style.left=Math.min(100,thr*3000)+'%'}
+function setTh(f){thr=Math.max((f||0)*Number($('sens').value),0.0005);$('mk').style.left=Math.min(100,thr*3000)+'%'}
 const showErr=m=>{$('err').textContent=m};
 async function start(){
   showErr('');
